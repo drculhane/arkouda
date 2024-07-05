@@ -177,6 +177,8 @@ module LinalgMsg {
         of compatible dimensions (the final two dimensions are the matrix dimensions,
         the preceding dimensions are the batch dimensions and must also be compatible)
 
+	Note: added boolean matrix multiply, for which (and,or) replace (*,+)
+
         Note: the array api specifies that one dimensional arrays can be supported
         in matrix multiplication by adding a degenerate dimension to the array, multiplying,
         and then removing the degenerate method. This procedure expects that such a
@@ -239,6 +241,7 @@ module LinalgMsg {
             when (DType.Bool, DType.Int64)      do return doMatMult(bool,    int,     int);
             when (DType.Bool, DType.UInt8)      do return doMatMult(bool,    uint(8), uint(8));
             when (DType.Bool, DType.Float64)    do return doMatMult(bool,    real,    real);
+            when (DType.Bool, DType.Bool)       do return doMatMult(bool,    bool,    bool);
             otherwise {
                 const errorMsg = notImplementedError(getRoutineName(), "matmul", x1G.dtype, x2G.dtype);
                 linalgLogger.error(getModuleName(),getRoutineName(),getLineNumber(),errorMsg);
@@ -298,6 +301,7 @@ module LinalgMsg {
 
     // TODO: not performant at all -- use tiled and parallel matrix multiplication
     //  or maybe use the linear algebra module? (do we want to compile Arkouda with that?)
+
     proc matMult(in A: [?D1] ?t, in B: [?D2] t, ref C: [?D3] t)
         where D1.rank == 2 && D2.rank == 2 && D3.rank == 2
     {
@@ -308,7 +312,11 @@ module LinalgMsg {
         for i in 0..<m do
             for j in 0..<n do
                 for l in 0..<k do
-                    C[i, j] += A[i, l] * B[l, j];
+			if t==bool {
+				C[i, j] |= A[i, l] & B[l, j];
+			} else {
+                    		C[i, j] += A[i, l] * B[l, j];
+			}
     }
 
     @arkouda.registerND
@@ -330,7 +338,7 @@ module LinalgMsg {
 
         proc doTranspose(type t): MsgTuple throws {
             var eIn = toSymEntry(gEnt, t, nd),
-                outShape: eIn.tupShape.type;
+                outShape = eIn.tupShape;
 
             outShape[outShape.size-2] <=> outShape[outShape.size-1];
 
@@ -341,7 +349,6 @@ module LinalgMsg {
             linalgLogger.debug(getModuleName(),getRoutineName(),getLineNumber(),repMsg);
             return new MsgTuple(repMsg, MsgType.NORMAL);
         }
-
         select gEnt.dtype {
             when DType.Int64 do return doTranspose(int);
             when DType.UInt8 do return doTranspose(uint(8));
@@ -358,10 +365,11 @@ module LinalgMsg {
 
     // TODO: performance improvements. Should use tiling to keep data local
     proc transpose(ref A: [?D], ref B) {
-        forall idx in D {
+        forall idx in D { 
             var bIdx = idx;
             bIdx[D.rank-1] <=> bIdx[D.rank-2];
-            B[bIdx] = A[idx];
+	    writeln(idx," A[idx] = ",A[idx]," trans idx is ",bIdx);
+            B[bIdx] = A[idx]; 
         }
     }
 

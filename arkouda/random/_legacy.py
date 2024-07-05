@@ -9,6 +9,24 @@ from arkouda.dtypes import int64 as akint64
 from arkouda.dtypes import int_scalars, numeric_scalars
 from arkouda.pdarrayclass import create_pdarray, pdarray
 
+#  infer_from_size is used in several pdarray creation functions.
+#  The code originally appeared in randint, below.
+#  It allows the user to supply either a shape or a size when
+#  creating a pdarray.
+
+def infer_from_size (size) :
+    shape: Union[int_scalars, Tuple[int_scalars, ...]] = 1
+    if isinstance(size, tuple):
+        shape = cast(Tuple, size)
+        full_size = 1
+        for s in cast(Tuple, shape):
+            full_size *= s
+        ndim = len(shape)
+    else:
+        full_size = cast(int, size)
+        shape = full_size
+        ndim = 1
+    return shape, ndim, full_size
 
 @typechecked
 def randint(
@@ -77,17 +95,19 @@ def randint(
     >>> ak.randint(1, 5, 10, dtype=ak.bool, seed=2)
     array([False, True, True, True, True, False, True, True, True, True])
     """
-    shape: Union[int_scalars, Tuple[int_scalars, ...]] = 1
-    if isinstance(size, tuple):
-        shape = cast(Tuple, size)
-        full_size = 1
-        for s in cast(Tuple, shape):
-            full_size *= s
-        ndim = len(shape)
-    else:
-        full_size = cast(int, size)
-        shape = full_size
-        ndim = 1
+#    shape: Union[int_scalars, Tuple[int_scalars, ...]] = 1
+#    if isinstance(size, tuple):
+#        shape = cast(Tuple, size)
+#        full_size = 1
+#        for s in cast(Tuple, shape):
+#            full_size *= s
+#        ndim = len(shape)
+#    else:
+#        full_size = cast(int, size)
+#        shape = full_size
+#        ndim = 1
+
+    shape, ndim, full_size = infer_from_size(size)
 
     if full_size < 0 or ndim < 1 or high < low:
         raise ValueError("size must be >= 0, ndim >= 1, and high >= low")
