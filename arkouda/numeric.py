@@ -73,6 +73,7 @@ __all__ = [
     "histogramdd",
     "median",
     "value_counts",
+    "matmul",
     "ErrorMode",
 ]
 
@@ -2182,3 +2183,12 @@ def count_nonzero(pda):
         return sum((pda).astype(np.int64))
     elif pda.dtype == str:
         return sum((pda != "").astype(np.int64))
+
+# perform multiplication
+
+def matmul (left, right, data_type) :
+    cmd = "matMul2D"
+    args={"x1":left,"x2":right,"dtype":data_type}
+    repMsg = generic_msg(cmd,args,)
+    return create_pdarray(type_cast(str, repMsg))
+

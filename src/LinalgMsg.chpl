@@ -368,7 +368,6 @@ module LinalgMsg {
         forall idx in D { 
             var bIdx = idx;
             bIdx[D.rank-1] <=> bIdx[D.rank-2];
-	    writeln(idx," A[idx] = ",A[idx]," trans idx is ",bIdx);
             B[bIdx] = A[idx]; 
         }
     }
@@ -459,7 +458,7 @@ module LinalgMsg {
                 return new MsgTuple(errorMsg, MsgType.ERROR);
             }
         }
-    }
+     }
 
     // @arkouda.registerND(???)
     // proc tensorDotMsg(cmd: string, msgArgs: borrowed MessageArgs, st: borrowed SymTab, param nd1: int, param nd2: int): MsgTuple throws {
@@ -537,4 +536,50 @@ module LinalgMsg {
     //     }
     //     return false;
     // }
+//}
+
+    //proc trilMsg(cmd: string, msgArgs: borrowed MessageArgs, st: borrowed SymTab, param nd: int): MsgTuple throws {
+    //registerFunction("myReshape", myReshapeMsg, getModuleName());
+ /* @arkouda.registerND
+    proc myReshapeMsg(cmd: string, msgArgs: borrowed MessageArgs, st: borrowed SymTab, param nd: int) {
+
+        const name = msgArgs.getValueOf("array"),
+              rname = st.nextName(),
+              shape = msgArgs.get("shape").getTuple();  // May not work
+
+        var gEnt: borrowed GenSymEntry = getGenericTypedArrayEntry(name, st);
+
+        linalgLogger.debug(getModuleName(),getRoutineName(),getLineNumber(),
+            "cmd: %s dtype: %s rname: %s".doFormat(
+            cmd,dtype2str(gEnt.dtype),rname));
+
+        proc doReshape (type t): MsgTuple throws {
+            // var eIn = toSymEntry(gEnt, t, nd),
+            var eIn = toSymEntry(gEnt, t, nd),
+                outShape = shape;
+
+            var eOut = st.addEntry(rname, (...outShape), t);
+
+	    forall (idx_in, idx_out) in zip (eIn.a.domain,eOut.a.domain) {
+		    eOut.a[idx_out] = eIn.a[idx_in];
+	    }
+
+            const repMsg = "created " + st.attrib(rname);
+            linalgLogger.debug(getModuleName(),getRoutineName(),getLineNumber(),repMsg);
+            return new MsgTuple(repMsg, MsgType.NORMAL);
+        }
+        select gEnt.dtype {
+            when DType.Int64 do return doReshape(int);
+            when DType.UInt8 do return doReshape(uint(8));
+            when DType.UInt64 do return doReshape(uint);
+            when DType.Float64 do return doReshape(real);
+            when DType.Bool do return doReshape(bool);
+            otherwise {
+                const errorMsg = notImplementedError(getRoutineName(), "reshape", gEnt.dtype);
+                linalgLogger.error(getModuleName(),getRoutineName(),getLineNumber(),errorMsg);
+                return new MsgTuple(errorMsg, MsgType.ERROR);
+            }
+        }
+    }
+  */
 }
