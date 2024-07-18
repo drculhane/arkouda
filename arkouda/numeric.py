@@ -74,6 +74,7 @@ __all__ = [
     "median",
     "value_counts",
     "matmul",
+    "transpose",
     "ErrorMode",
 ]
 
@@ -2189,6 +2190,14 @@ def count_nonzero(pda):
 def matmul (left, right, data_type) :
     cmd = "matMul2D"
     args={"x1":left,"x2":right,"dtype":data_type}
+    repMsg = generic_msg(cmd,args,)
+    return create_pdarray(type_cast(str, repMsg))
+
+# perform transpose
+
+def transpose (before) :
+    cmd = "transpose2D"
+    args={"array":before}
     repMsg = generic_msg(cmd,args,)
     return create_pdarray(type_cast(str, repMsg))
 

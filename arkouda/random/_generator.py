@@ -85,7 +85,7 @@ class Generator:
 
         if size is None:
             ret_scalar = True
-            size = 1
+            full_size = 1
         else:
             shape, ndim, full_size = infer_from_size(size)  # adc
             ret_scalar = False
@@ -103,7 +103,7 @@ class Generator:
         else:
             raise TypeError("choice only accepts a pdarray or int scalar.")
 
-        if not replace and size > pop_size:
+        if not replace and full_size > pop_size:
             raise ValueError("Cannot take a larger sample than population when replace is False")
 
         has_weights = p is not None
@@ -197,6 +197,8 @@ class Generator:
         if size is None:
             # delegate to numpy when return size is 1
             return self._np_generator.integers(low=low, high=high, dtype=dtype, endpoint=endpoint)
+        else:
+            shape, ndim, full_size = infer_from_size(size)  # adc
         if high is None:
             high = low
             low = 0
@@ -210,13 +212,16 @@ class Generator:
                 "name": name,
                 "low": low,
                 "high": high,
-                "size": size,
+                "size": full_size,
                 "dtype": dtype,
                 "state": self._state,
             },
         )
-        self._state += size
-        return create_pdarray(rep_msg)
+        self._state += full_size
+        pda = create_pdarray(rep_msg)
+        if ndim > 1 :
+            pda = _reshape(pda,shape)
+        return pda
 
     def normal(self, loc=0.0, scale=1.0, size=None):
         r"""
@@ -304,19 +309,24 @@ class Generator:
         if size is None:
             # delegate to numpy when return size is 1
             return self._np_generator.random()
+        else:
+            shape, ndim, full_size = infer_from_size(size)  # adc
         rep_msg = generic_msg(
             cmd="uniformGenerator",
             args={
                 "name": self._name_dict[akfloat64],
                 "low": 0.0,
                 "high": 1.0,
-                "size": size,
+                "size": full_size,
                 "dtype": akfloat64,
                 "state": self._state,
             },
         )
-        self._state += size
-        return create_pdarray(rep_msg)
+        self._state += full_size
+        pda = create_pdarray(rep_msg)
+        if ndim > 1 :
+            pda = _reshape(pda,shape)
+        return pda
 
     def standard_normal(self, size=None):
         r"""
@@ -354,17 +364,22 @@ class Generator:
         if size is None:
             # delegate to numpy when return size is 1
             return self._np_generator.standard_normal()
+        else:
+            shape, ndim, full_size = infer_from_size(size)  # adc
         rep_msg = generic_msg(
             cmd="standardNormalGenerator",
             args={
                 "name": self._name_dict[akfloat64],
-                "size": size,
+                "size": full_size,
                 "state": self._state,
             },
         )
         # since we generate 2*size uniform samples for box-muller transform
-        self._state += size * 2
-        return create_pdarray(rep_msg)
+        self._state += full_size * 2
+        pda = create_pdarray(rep_msg)
+        if ndim > 1 :
+            pda = _reshape(pda,shape)
+        return pda
 
     def shuffle(self, x):
         """
@@ -477,6 +492,8 @@ class Generator:
         if size is None:
             # delegate to numpy when return size is 1
             return self._np_generator.poisson(lam, size)
+        else:
+            shape, ndim, full_size = infer_from_size(size)  # adc
 
         if _val_isinstance_of_union(lam, numeric_scalars):
             is_single_lambda = True
@@ -486,7 +503,7 @@ class Generator:
                 raise TypeError("lambda must be >=0")
         elif isinstance(lam, pdarray):
             is_single_lambda = False
-            if size != lam.size:
+            if full_size != lam.size:
                 raise TypeError("array of lambdas must have same size as return size")
             if lam.dtype != akfloat64:
                 from arkouda.numeric import cast as akcast
@@ -503,13 +520,16 @@ class Generator:
                 "name": self._name_dict[akfloat64],
                 "lam": lam,
                 "is_single_lambda": is_single_lambda,
-                "size": size,
+                "size": full_size,
                 "state": self._state,
             },
         )
         # we only generate one val using the generator in the symbol table
         self._state += 1
-        return create_pdarray(rep_msg)
+        pda = create_pdarray(rep_msg)
+        if ndim > 1 :
+            pda = _reshape(pda,shape)
+        return pda
 
     def uniform(self, low=0.0, high=1.0, size=None):
         """
@@ -550,19 +570,24 @@ class Generator:
         if size is None:
             # delegate to numpy when return size is 1
             return self._np_generator.uniform(low=low, high=high)
+        else:
+            shape, ndim, full_size = infer_from_size(size)  # adc
         rep_msg = generic_msg(
             cmd="uniformGenerator",
             args={
                 "name": self._name_dict[akfloat64],
                 "low": low,
                 "high": high,
-                "size": size,
+                "size": full_size,
                 "dtype": akfloat64,
                 "state": self._state,
             },
         )
-        self._state += size
-        return create_pdarray(rep_msg)
+        self._state += full_size
+        pda = create_pdarray(rep_msg)
+        if ndim > 1 :
+            pda = _reshape(pda,shape)
+        return pda
 
 
 def default_rng(seed=None):
