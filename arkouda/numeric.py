@@ -35,6 +35,7 @@ __all__ = [
     "ceil",
     "clip",
     "count_nonzero",
+    "eye",
     "floor",
     "trunc",
     "round",
@@ -75,6 +76,9 @@ __all__ = [
     "value_counts",
     "matmul",
     "transpose",
+    "triu",
+    "tril",
+    "vecdot",
     "ErrorMode",
 ]
 
@@ -2201,3 +2205,36 @@ def transpose (before) :
     repMsg = generic_msg(cmd,args,)
     return create_pdarray(type_cast(str, repMsg))
 
+# create identity (or similar) matrix
+
+def eye (rows, cols, diag, data_type) :
+    cmd = "eye"
+    args = {"rows":rows,"cols":cols,"diag":diag,"dtype":data_type}
+    repMsg = generic_msg(cmd,args,)
+    return create_pdarray(type_cast(str, repMsg))
+
+# create triangular (upper or lower) matrix
+
+def triu (pda, diag) :
+    ndim = len(pda.shape)
+    cmd = f"triu{ndim}D"
+    args = {"array":pda,"diag":diag}
+    repMsg = generic_msg(cmd,args,)
+    return create_pdarray(type_cast(str, repMsg))
+
+def tril (pda, diag) :
+    ndim = len(pda.shape)
+    cmd = f"tril{ndim}D"
+    args = {"array":pda,"diag":diag}
+    repMsg = generic_msg(cmd,args,)
+    return create_pdarray(type_cast(str, repMsg))
+
+# do vecdot
+
+def vecdot (x1,x2,axis) :
+    shape = tuple(x1.shape)
+    ndim = len(shape)
+    cmd = f"vecdot{ndim}D"
+    args = {"x1":x1,"x2":x2,"bcShape":shape,"axis":axis}
+    repMsg = generic_msg(cmd,args,)
+    return create_pdarray(type_cast(str, repMsg))
