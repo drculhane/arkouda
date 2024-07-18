@@ -70,6 +70,7 @@ __all__ = [
     "RegistrationError",
     "broadcast_to_shape",
     "_to_pdarray",
+    "_reshape",
 ]
 
 logger = getArkoudaLogger(name="pdarrayclass")

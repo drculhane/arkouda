@@ -130,7 +130,9 @@ def randint(
 
 
 @typechecked
-def standard_normal(size: int_scalars, seed: Union[None, int_scalars] = None) -> pdarray:
+def standard_normal(
+        size: Union[int_scalars, Tuple[int_scalars, ...]] = 1,
+        seed: Union[None, int_scalars] = None) -> pdarray:
     """
     Draw real numbers from the standard normal distribution.
 
@@ -168,18 +170,30 @@ def standard_normal(size: int_scalars, seed: Union[None, int_scalars] = None) ->
     >>> ak.standard_normal(3,1)
     array([-0.68586185091150265, 1.1723810583573375, 0.567584107142031])
     """
-    if size < 0:
-        raise ValueError("The size parameter must be > 0")
+#   if size < 0:
+#       raise ValueError("The size parameter must be > 0")
+    shape, ndim, full_size = infer_from_size(size)
+
+    if full_size < 0 or ndim < 1 :
+        raise ValueError("size must be >= 0, ndim >= 1")
     return create_pdarray(
-        generic_msg(
-            cmd="randomNormal", args={"size": NUMBER_FORMAT_STRINGS["int64"].format(size), "seed": seed}
+    repMsg = generic_msg(
+        cmd=f"randomNormal{ndim}D",
+        args={
+            "shape": shape,
+            "seed": seed,
+        },
+#       generic_msg(
+#           cmd="randomNormal", args={"size": NUMBER_FORMAT_STRINGS["int64"].format(size), "seed": seed}
+#           cmd="randomNormal", args={"size": NUMBER_FORMAT_STRINGS["int64"].format(size), "seed": seed}
         )
     )
 
 
 @typechecked
 def uniform(
-    size: int_scalars,
+    size: Union[int_scalars, Tuple[int_scalars, ...]] = 1,
+#   size: int_scalars,
     low: numeric_scalars = float(0.0),
     high: numeric_scalars = 1.0,
     seed: Union[None, int_scalars] = None,

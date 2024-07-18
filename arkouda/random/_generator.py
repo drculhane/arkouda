@@ -9,8 +9,9 @@ from arkouda.dtypes import float_scalars
 from arkouda.dtypes import int64 as akint64
 from arkouda.dtypes import int_scalars, numeric_scalars
 from arkouda.dtypes import uint64 as akuint64
-from arkouda.pdarrayclass import create_pdarray, pdarray
+from arkouda.pdarrayclass import create_pdarray, pdarray, _reshape
 
+from arkouda.random._legacy import infer_from_size   # adc
 
 class Generator:
     """
@@ -81,10 +82,12 @@ class Generator:
         pdarray, numeric_scalar
             A pdarray containing the sampled values or a single random value if size not provided.
         """
+
         if size is None:
             ret_scalar = True
             size = 1
         else:
+            shape, ndim, full_size = infer_from_size(size)  # adc
             ret_scalar = False
 
         from arkouda.numeric import cast as akcast
@@ -117,11 +120,14 @@ class Generator:
 
         rep_msg = generic_msg(
             cmd="choice",
+#           cmd=f"choice{ndim}D",  # adc
             args={
                 "gName": name,
                 "aName": a,
                 "wName": p,
-                "numSamples": size,
+#               "shape" : shape, # adc
+#               "numSamples": size, 
+                "numSamples": full_size, # adc
                 "replace": replace,
                 "hasWeights": has_weights,
                 "isDom": is_domain,
@@ -136,6 +142,8 @@ class Generator:
         self._state += pop_size
 
         pda = create_pdarray(rep_msg)
+        if ndim > 1 :
+            pda = _reshape(pda,shape)
         return pda if not ret_scalar else pda[0]
 
     def integers(self, low, high=None, size=None, dtype=akint64, endpoint=False):

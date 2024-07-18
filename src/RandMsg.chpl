@@ -160,9 +160,13 @@ module RandMsg
         }
     }
 
-    proc randomNormalMsg(cmd: string, msgArgs: borrowed MessageArgs, st: borrowed SymTab): MsgTuple throws {
+    @arkouda.registerND
+    proc randomNormalMsg(cmd: string, msgArgs: borrowed MessageArgs, st: borrowed SymTab, param nd : int): MsgTuple throws {
+        const shape = msgArgs.get("shape").getTuple(nd);
+        var len = 1;
+        for s in shape do len *= s;
         var pn = Reflection.getRoutineName();
-        const len = msgArgs.get("size").getIntValue();
+//      const len = msgArgs.get("size").getIntValue();
         // Result + 2 scratch arrays
         overMemLimit(3*8*len);
         var rname = st.nextName();
@@ -390,12 +394,15 @@ module RandMsg
         return new MsgTuple(repMsg, MsgType.NORMAL);
     }
 
+//  @arkouda.registerND
+//  proc choiceMsg(cmd: string, msgArgs: borrowed MessageArgs, st: borrowed SymTab, param nd : int): MsgTuple throws {
     proc choiceMsg(cmd: string, msgArgs: borrowed MessageArgs, st: borrowed SymTab): MsgTuple throws {
         const pn = Reflection.getRoutineName(),
               gName = msgArgs.getValueOf("gName"),                      // generator name
               aName = msgArgs.getValueOf("aName"),                      // values array name
               wName = msgArgs.getValueOf("wName"),                      // weights array name
               numSamples = msgArgs.get("numSamples").getIntValue(),     // number of samples
+ //     shape = msgArgs.get("shape").getTuple(nd), // adc
               replace = msgArgs.get("replace").getBoolValue(),          // sample with replacement
               hasWeights = msgArgs.get("hasWeights").getBoolValue(),    // flag indicating whether weighted sample
               isDom = msgArgs.get("isDom").getBoolValue(),              // flag indicating whether return is domain or array
@@ -404,6 +411,9 @@ module RandMsg
               dtype = str2dtype(dtypeStr),                              // DType enum
               state = msgArgs.get("state").getIntValue(),               // rng state
               rname = st.nextName();
+
+//      var numSamples = 1;                             // adc
+//      for s in shape do numSamples *= s;
 
         randLogger.debug(getModuleName(),pn,getLineNumber(),
                          "gname: %? aname %? wname: %? numSamples %i replace %i hasWeights %i isDom %i dtype %? popSize %? state %i rname %?"
@@ -431,7 +441,7 @@ module RandMsg
         }
 
         proc choiceHelper(type t) throws {
-            // I had to break these 2 helpers out into seprate functions since they have different types for generatorEntry
+            // I had to break these 2 helpers out into separate functions since they have different types for generatorEntry
             const choiceIdx = if hasWeights then weightedIdxHelper() else idxHelper();
 
             if isDom {
@@ -440,6 +450,7 @@ module RandMsg
             }
             else {
                 var choiceArr: [makeDistDom(numSamples)] t;
+//              var choiceArr: [makeDistDom((...shape))] t; // adc
                 st.checkTable(aName);
                 const myArr = toSymEntry(getGenericTypedArrayEntry(aName, st),t).a;
 
@@ -694,7 +705,7 @@ module RandMsg
     }
 
     use CommandMap;
-    registerFunction("randomNormal", randomNormalMsg, getModuleName());
+//  registerFunction("randomNormal", randomNormalMsg, getModuleName());
     registerFunction("createGenerator", createGeneratorMsg, getModuleName());
     registerFunction("uniformGenerator", uniformGeneratorMsg, getModuleName());
     registerFunction("standardNormalGenerator", standardNormalGeneratorMsg, getModuleName());
