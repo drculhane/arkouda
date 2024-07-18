@@ -1731,11 +1731,15 @@ def matching_shapes(pda_a: pdarray, pda_b: pdarray):
     It's included so that we can put placeholders in for the check as
     we implement n-dimensional array computation.
 
-    Parameters:
+    Parameters
+    ----------
         pda_a : pdarray
         pda_b : pdarray
 
-    Returns:
+    Returns
+    -------
+        boolean
+
         True if pda_a.size == pda_b.size, else False
 
     Examples
