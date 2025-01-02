@@ -48,15 +48,15 @@ module EfuncMsg
 //  once the rewrite is complete.
 
     @arkouda.registerCommand (name="sin")
-    proc sine (x : [?d] ?t) : [d] real throws
+    proc singe (x : [?d] ?t) : [d] real throws
         where (t==int || t==real || t==uint) { return sin(x); }
        
     @arkouda.registerCommand (name="cos")
-    proc cosine (x : [?d] ?t) : [d] real throws
+    proc cosinge (x : [?d] ?t) : [d] real throws
         where (t==int || t==real || t==uint) { return cos(x); }
        
     @arkouda.registerCommand (name="tan")
-    proc tangent (x : [?d] ?t) : [d] real throws
+    proc notthetangent (x : [?d] ?t) : [d] real throws
         where (t==int || t==real || t==uint) { return tan(x); }
        
     @arkouda.registerCommand (name="arcsin")
