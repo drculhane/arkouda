@@ -3734,10 +3734,7 @@ def mink(pda: pdarray, k: int_scalars) -> pdarray:
 
     Notes
     -----
-    This call is equivalent in value to:
-
-        a[ak.argsort(a)[:k]]
-
+    This call is equivalent in value to a[ak.argsort(a)[:k]]
     and generally outperforms this operation.
 
     This reduction will see a significant drop in performance as `k` grows
@@ -3791,9 +3788,7 @@ def maxk(pda: pdarray, k: int_scalars) -> pdarray:
 
     Notes
     -----
-    This call is equivalent in value to:
-
-        a[ak.argsort(a)[k:]]
+    This call is equivalent in value to a[ak.argsort(a)[k:]]
 
     and generally outperforms this operation.
 
@@ -3846,10 +3841,7 @@ def argmink(pda: pdarray, k: int_scalars) -> pdarray:
 
     Notes
     -----
-    This call is equivalent in value to:
-
-        ak.argsort(a)[:k]
-
+    This call is equivalent in value to ak.argsort(a)[:k]
     and generally outperforms this operation.
 
     This reduction will see a significant drop in performance as `k` grows
@@ -3903,10 +3895,7 @@ def argmaxk(pda: pdarray, k: int_scalars) -> pdarray:
 
     Notes
     -----
-    This call is equivalent in value to:
-
-        ak.argsort(a)[k:]
-
+    This call is equivalent in value to ak.argsort(a)[k:]
     and generally outperforms this operation.
 
     This reduction will see a significant drop in performance as `k` grows
