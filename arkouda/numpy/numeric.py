@@ -83,6 +83,8 @@ __all__ = [
     "expm1",
     "square",
     "matmul",
+    "altmatmul",
+    "altmatmulmultidim",
     "nextafter",
     "triu",
     "tril",
@@ -3088,6 +3090,31 @@ def _matmul2D(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
             f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
         )
 
+def altmatmul(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
+    from arkouda.client import generic_msg
+
+    if pdaLeft.ndim == 2 and pdaRight.ndim == 2:
+        if pdaLeft.shape[-1] != pdaRight.shape[0]:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for altmatmul: {pdaLeft.shape} and {pdaRight.shape}"
+            )
+        else:
+            cmd = f"altmatmul<{pdaLeft.dtype},{pdaRight.dtype},{pdaLeft.ndim}>"
+            args = {
+                "x1": pdaLeft,
+                "x2": pdaRight,
+            }
+            return create_pdarray(
+                generic_msg(
+                    cmd=cmd,
+                    args=args,
+                )
+            )
+    else:
+        raise ValueError(
+            f"Mismatch in dimensions of arguments for altmatmul: {pdaLeft.shape} and {pdaRight.shape}"
+        )
+
 
 @typechecked
 def matmul(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
@@ -3212,6 +3239,47 @@ def matmul(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
                 f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
             ) from e
 
+
+def altmatmulmultidim(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
+    from arkouda.client import generic_msg
+    from arkouda.numpy.pdarrayclass import dot
+    from arkouda.numpy.util import broadcast_shapes, broadcast_to
+
+    if pdaLeft.shape[-1] != pdaRight.shape[-2]:
+        raise ValueError(
+            f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+        )
+    left_preshape = pdaLeft.shape[0:-2]  # pull off all but last 2 dims of
+    right_preshape = pdaRight.shape[0:-2]  # both shapes
+    try:
+        #  if the shapes are incompatible for broadcast, broadcast_shapes
+        #  will raise an error, which will be caught below.
+        tmp_preshape = broadcast_shapes(left_preshape, right_preshape)
+        tmp_pdaLeftshape = list(tmp_preshape)
+        tmp_pdaLeftshape.append(pdaLeft.shape[-2])  # restore the last 2 dims
+        tmp_pdaLeftshape.append(pdaLeft.shape[-1])  # of the left shape
+        new_pdaLeftshape = tuple(tmp_pdaLeftshape)
+        tmp_pdaRightshape = list(tmp_preshape)  # now do the same jiggery-pokery
+        tmp_pdaRightshape.append(pdaRight.shape[-2])  # with the shape of pdaRight
+        tmp_pdaRightshape.append(pdaRight.shape[-1])
+        new_pdaRightshape = tuple(tmp_pdaRightshape)
+        new_pdaLeft = broadcast_to(pdaLeft, new_pdaLeftshape)
+        new_pdaRight = broadcast_to(pdaRight, new_pdaRightshape)  # args are now ready
+        cmd = f"altmultidimmatmul<{pdaLeft.dtype},{new_pdaLeft.ndim},{pdaRight.dtype}>"
+        args = {
+            "a": new_pdaLeft,
+            "b": new_pdaRight,
+        }
+        return create_pdarray(
+            generic_msg(
+                cmd=cmd,
+                args=args,
+            )
+        )
+    except Exception as e:
+        raise ValueError(
+            f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+        ) from e
 
 @typechecked
 def vecdot(

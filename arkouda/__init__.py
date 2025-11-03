@@ -243,6 +243,8 @@ from arkouda.numpy import (
     ma,
     manipulation_functions,
     matmul,
+    altmatmul,
+    altmatmulmultidim,
     max,
     maxk,
     may_share_memory,

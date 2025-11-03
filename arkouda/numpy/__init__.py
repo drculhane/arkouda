@@ -181,6 +181,8 @@ from arkouda.numpy.numeric import (
     log1p,
     log2,
     matmul,
+    altmatmul,
+    altmatmulmultidim,
     median,
     nextafter,
     percentile,
