@@ -613,7 +613,7 @@ module LinalgMsg {
         const kRange = 0..a.shape[d.rank-1] ; // the loop index
         coforall loc in Locales do on loc {
            const ClocDom = c.localSubdomain();
-
+/*
 // suggestion from chatGPT here
 
             var aRanges: d.rank*range;
@@ -641,28 +641,51 @@ module LinalgMsg {
 
            var Alocal = a[SubDomA];
            var Blocal = b[SubDomB];
-
            writeln ("On Locale ",here.id," C dom, A dom, B dom are: ",ClocDom," ",SubDomA," ",SubDomB);
+*/
         
            if !ClocDom.isEmpty() {
-              forall Cidx in ClocDom {
-                 var sum: np_ret_type(ta,tb) =
-                     if np_ret_type(ta,tb) == bool then false else 0:np_ret_type(ta,tb);
-                 for k in kRange {
-                     var Aidx = Cidx; Aidx[d.rank-1] = k;
-                     var Bidx = Cidx; Bidx[d.rank-2] = k;
-                     if np_ret_type(ta,tb) != bool then
-                         sum += Alocal[Aidx]:np_ret_type(ta,tb)
-                                    * Blocal[Bidx]:np_ret_type(ta,tb);
-                     else
-                         sum |= Alocal[Aidx]:np_ret_type(ta,tb)
-                                    & Blocal[Bidx]:np_ret_type(ta,tb);
-                 }
-                 c[Cidx] = sum;
-              }
-           }   
-        }
-        return c;
+                // Build the local parts of a and b
+               var aRanges: d.rank*range;
+               var bRanges: d.rank*range;
+               for param i in 0..d.rank-1 {
+                   if i == d.rank-1 {
+                       aRanges[i] = kRange;
+                       bRanges[i] = ClocDom.dim(i);
+                   } else if i == d.rank - 2 {
+                       aRanges[i] = ClocDom.dim(i);
+                       bRanges[i] = kRange;
+                   } else {
+                       aRanges[i] = ClocDom.dim(i);
+                       bRanges[i] = ClocDom.dim(i);
+                   }
+               }
+
+               const SubDomA = {(...aRanges)};
+               const SubDomB = {(...bRanges)};
+               writeln ("On Locale ",here.id," C dom, A dom, B dom are: ",ClocDom," ",SubDomA," ",SubDomB); // debugging
+               var Alocal = a[SubDomA];
+               var Blocal = b[SubDomB];
+
+                //  Now perform the computation
+               forall Cidx in ClocDom {
+                   var sum: np_ret_type(ta,tb) =
+                       if np_ret_type(ta,tb) == bool then false else 0:np_ret_type(ta,tb);
+                   for k in kRange {
+                       var Aidx = Cidx; Aidx[d.rank-1] = k;
+                       var Bidx = Cidx; Bidx[d.rank-2] = k;
+                       if np_ret_type(ta,tb) != bool then
+                           sum += Alocal[Aidx]:np_ret_type(ta,tb)
+                                      * Blocal[Bidx]:np_ret_type(ta,tb);
+                       else
+                           sum |= Alocal[Aidx]:np_ret_type(ta,tb)
+                                      & Blocal[Bidx]:np_ret_type(ta,tb);
+                   }
+                   c[Cidx] = sum;
+                }
+             }   
+          }
+          return c;
     }
 
     /*
