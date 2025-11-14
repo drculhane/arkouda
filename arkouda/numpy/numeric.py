@@ -83,8 +83,7 @@ __all__ = [
     "expm1",
     "square",
     "matmul",
-    "altmatmul",
-    "altmatmulmultidim",
+    "distmatmul",
     "nextafter",
     "triu",
     "tril",
@@ -3090,19 +3089,19 @@ def _matmul2D(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
             f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
         )
 
-def altmatmul(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
+def _distmatmul2D(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
     from arkouda.client import generic_msg
 
     if pdaLeft.ndim == 2 and pdaRight.ndim == 2:
         if pdaLeft.shape[-1] != pdaRight.shape[0]:
             raise ValueError(
-                f"Mismatch in dimensions of arguments for altmatmul: {pdaLeft.shape} and {pdaRight.shape}"
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
             )
         else:
-            cmd = f"altmatmul<{pdaLeft.dtype},{pdaRight.dtype},{pdaLeft.ndim}>"
+            cmd = f"distmatmul<{pdaLeft.dtype},{pdaLeft.ndim},{pdaRight.dtype},{pdaRight.ndim}>"
             args = {
-                "x1": pdaLeft,
-                "x2": pdaRight,
+                "a": pdaLeft,
+                "b": pdaRight,
             }
             return create_pdarray(
                 generic_msg(
@@ -3112,9 +3111,8 @@ def altmatmul(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
             )
     else:
         raise ValueError(
-            f"Mismatch in dimensions of arguments for altmatmul: {pdaLeft.shape} and {pdaRight.shape}"
+            f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
         )
-
 
 @typechecked
 def matmul(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
@@ -3223,7 +3221,7 @@ def matmul(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
             new_pdaRightshape = tuple(tmp_pdaRightshape)
             new_pdaLeft = broadcast_to(pdaLeft, new_pdaLeftshape)
             new_pdaRight = broadcast_to(pdaRight, new_pdaRightshape)  # args are now ready
-            cmd = f"multidimmatmul<{pdaLeft.dtype},{new_pdaLeft.ndim},{pdaRight.dtype}>"
+            cmd = f"multidimmatmul<{pdaLeft.dtype},{new_pdaLeft.ndim},{pdaRight.dtype},{new_pdaRight.ndim}>"
             args = {
                 "a": new_pdaLeft,
                 "b": new_pdaRight,
@@ -3239,47 +3237,131 @@ def matmul(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
                 f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
             ) from e
 
+@typechecked
+def distmatmul(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
+    """
+    Compute the product of two matrices.
+    If both are 1D, this returns a simple dot product.
+    If both are 2D, it returns a conventional matrix multiplication.
+    If only one is 1D, the result matches the "dot" function, so we use that.
+    If neither is 1D and at least one is > 2D, then broadcasting is involved.
+    If pdaLeft's shape is [(leftshape),m,n] and pdaRight's shape is [(rightshape),n,k],
+    then the result will have shape [(common shape),m,k] where common shape is a
+    shape that both leftshape and rightshape can be broadcast to.
 
-def altmatmulmultidim(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
+    Parameters
+    ----------
+    pdaLeft : pdarray
+    pdaRight : pdarray
+
+    Returns
+    -------
+    pdarray
+        the matrix product pdaLeft x pdaRight
+
+    Examples
+    --------
+    >>> import arkouda as ak
+    >>> a = ak.array([[1,2,3,4,5],[1,2,3,4,5]])
+    >>> b = ak.array([[1,1],[2,2],[3,3],[4,4],[5,5]])
+    >>> ak.matmul(a,b)
+    array([array([55 55]) array([55 55])])
+
+    >>> x = ak.array([[1,2,3],[1.1,2.1,3.1]])
+    >>> y = ak.array([[1,1,1],[0,2,2],[0,0,3]])
+    >>> ak.matmul(x,y)
+    array([array([1.00000000... 5.00000000... 14.0000000...])
+    array([1.10000000... 5.30000000... 14.6000000...])])
+
+    Raises
+    ------
+    ValueError
+        Raised if shapes are incompatible with matrix multiplication.
+
+    """
     from arkouda.client import generic_msg
     from arkouda.numpy.pdarrayclass import dot
     from arkouda.numpy.util import broadcast_shapes, broadcast_to
 
-    if pdaLeft.shape[-1] != pdaRight.shape[-2]:
-        raise ValueError(
-            f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
-        )
-    left_preshape = pdaLeft.shape[0:-2]  # pull off all but last 2 dims of
-    right_preshape = pdaRight.shape[0:-2]  # both shapes
-    try:
-        #  if the shapes are incompatible for broadcast, broadcast_shapes
-        #  will raise an error, which will be caught below.
-        tmp_preshape = broadcast_shapes(left_preshape, right_preshape)
-        tmp_pdaLeftshape = list(tmp_preshape)
-        tmp_pdaLeftshape.append(pdaLeft.shape[-2])  # restore the last 2 dims
-        tmp_pdaLeftshape.append(pdaLeft.shape[-1])  # of the left shape
-        new_pdaLeftshape = tuple(tmp_pdaLeftshape)
-        tmp_pdaRightshape = list(tmp_preshape)  # now do the same jiggery-pokery
-        tmp_pdaRightshape.append(pdaRight.shape[-2])  # with the shape of pdaRight
-        tmp_pdaRightshape.append(pdaRight.shape[-1])
-        new_pdaRightshape = tuple(tmp_pdaRightshape)
-        new_pdaLeft = broadcast_to(pdaLeft, new_pdaLeftshape)
-        new_pdaRight = broadcast_to(pdaRight, new_pdaRightshape)  # args are now ready
-        cmd = f"altmultidimmatmul<{pdaLeft.dtype},{new_pdaLeft.ndim},{pdaRight.dtype}>"
-        args = {
-            "a": new_pdaLeft,
-            "b": new_pdaRight,
-        }
-        return create_pdarray(
-            generic_msg(
-                cmd=cmd,
-                args=args,
+    # Disallow scalar arguments.  That's not a matmul thing.
+
+    if pdaLeft.ndim < 1 or pdaRight.ndim < 1:
+        raise ValueError("Scalar arguments not allowed for matmul.")
+
+    # Handle the 1D and 1D case.
+
+    elif pdaLeft.ndim == 1 and pdaRight.ndim == 1:
+        if pdaLeft.size != pdaRight.size:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
             )
-        )
-    except Exception as e:
-        raise ValueError(
-            f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
-        ) from e
+        else:
+            return dot(pdaLeft, pdaRight)
+
+    # Handle the 2D and 2D case.
+
+    elif pdaLeft.ndim == 2 and pdaRight.ndim == 2:
+        return _distmatmul2D(pdaLeft, pdaRight)
+
+    # Handle both singleton 1D cases (i.e. either left or right is 1D, but not both)
+
+    elif pdaLeft.ndim == 1:
+        if pdaLeft.size != pdaRight.shape[-2]:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+            )
+        else:
+            return dot(pdaLeft, pdaRight)
+
+    elif pdaRight.ndim == 1:
+        if pdaRight.size != pdaLeft.shape[-1]:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+            )
+        else:
+            return dot(pdaLeft, pdaRight)
+
+    # Handle the multi-dim cases.  This involves finding a common shape for broadcast.
+
+    else:
+        if pdaLeft.shape[-1] != pdaRight.shape[-2]:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+            )
+        left_preshape = pdaLeft.shape[0:-2]  # pull off all but last 2 dims of
+        right_preshape = pdaRight.shape[0:-2]  # both shapes
+        try:
+            #  if the shapes are incompatible for broadcast, broadcast_shapes
+            #  will raise an error, which will be caught below.
+            tmp_preshape = broadcast_shapes(left_preshape, right_preshape)
+            tmp_pdaLeftshape = list(tmp_preshape)
+            tmp_pdaLeftshape.append(pdaLeft.shape[-2])  # restore the last 2 dims
+            tmp_pdaLeftshape.append(pdaLeft.shape[-1])  # of the left shape
+            new_pdaLeftshape = tuple(tmp_pdaLeftshape)
+            tmp_pdaRightshape = list(tmp_preshape)  # now do the same jiggery-pokery
+            tmp_pdaRightshape.append(pdaRight.shape[-2])  # with the shape of pdaRight
+            tmp_pdaRightshape.append(pdaRight.shape[-1])
+            new_pdaRightshape = tuple(tmp_pdaRightshape)
+            new_pdaLeft = broadcast_to(pdaLeft, new_pdaLeftshape)
+            new_pdaRight = broadcast_to(pdaRight, new_pdaRightshape)  # args are now ready
+            try:
+                cmd = f"distmultidimmatmul<{pdaLeft.dtype},{new_pdaLeft.ndim},{pdaRight.dtype},{new_pdaRight.ndim}>"
+                args = {
+                    "a": new_pdaLeft,
+                    "b": new_pdaRight,
+                }
+                return create_pdarray(
+                    generic_msg(
+                        cmd=cmd,
+                        args=args,
+                    )
+                )
+            except Exception as e1:
+                raise RuntimeError("Failed to compute multidim matrix multiplication.") from e1
+        except Exception as e2:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+            ) from e2
 
 @typechecked
 def vecdot(
@@ -3684,3 +3766,119 @@ def take(
     )
 
     return result
+
+
+def experimentaldistmatmul(pdaLeft: pdarray, pdaRight: pdarray) -> pdarray:
+    """
+    Compute the product of two matrices.
+    If both are 1D, this returns a simple dot product.
+    If both are 2D, it returns a conventional matrix multiplication.
+    If only one is 1D, the result matches the "dot" function, so we use that.
+    If neither is 1D and at least one is > 2D, then broadcasting is involved.
+    If pdaLeft's shape is [(leftshape),m,n] and pdaRight's shape is [(rightshape),n,k],
+    then the result will have shape [(common shape),m,k] where common shape is a
+    shape that both leftshape and rightshape can be broadcast to.
+
+    Parameters
+    ----------
+    pdaLeft : pdarray
+    pdaRight : pdarray
+
+    Returns
+    -------
+    pdarray
+        the matrix product pdaLeft x pdaRight
+
+    Examples
+    --------
+    >>> import arkouda as ak
+    >>> a = ak.array([[1,2,3,4,5],[1,2,3,4,5]])
+    >>> b = ak.array([[1,1],[2,2],[3,3],[4,4],[5,5]])
+    >>> ak.matmul(a,b)
+    array([array([55 55]) array([55 55])])
+
+    >>> x = ak.array([[1,2,3],[1.1,2.1,3.1]])
+    >>> y = ak.array([[1,1,1],[0,2,2],[0,0,3]])
+    >>> ak.matmul(x,y)
+    array([array([1.00000000... 5.00000000... 14.0000000...])
+    array([1.10000000... 5.30000000... 14.6000000...])])
+
+    Raises
+    ------
+    ValueError
+        Raised if shapes are incompatible with matrix multiplication.
+
+    """
+    from arkouda.client import generic_msg
+    from arkouda.numpy.pdarrayclass import dot
+    from arkouda.numpy.util import broadcast_shapes, broadcast_to
+
+    # Disallow scalar arguments.  That's not a matmul thing.
+
+    if pdaLeft.ndim < 1 or pdaRight.ndim < 1:
+        raise ValueError("Scalar arguments not allowed for matmul.")
+
+    # Handle the 1D and 1D case.
+
+    elif pdaLeft.ndim == 1 and pdaRight.ndim == 1:
+        if pdaLeft.size != pdaRight.size:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+            )
+        else:
+            return dot(pdaLeft, pdaRight)
+
+    # Handle the 2D and 2D case.
+
+    elif pdaLeft.ndim == 2 and pdaRight.ndim == 2:
+        return _distmatmul2D(pdaLeft, pdaRight)
+
+    # Handle both singleton 1D cases (i.e. either left or right is 1D, but not both)
+
+    elif pdaLeft.ndim == 1:
+        if pdaLeft.size != pdaRight.shape[-2]:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+            )
+        else:
+            return dot(pdaLeft, pdaRight)
+
+    elif pdaRight.ndim == 1:
+        if pdaRight.size != pdaLeft.shape[-1]:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+            )
+        else:
+            return dot(pdaLeft, pdaRight)
+
+    # Handle the multi-dim cases.  This involves finding a common shape for broadcast.
+
+    else:
+        if pdaLeft.shape[-1] != pdaRight.shape[-2]:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+            )
+        left_preshape = pdaLeft.shape[0:-2]  # pull off all but last 2 dims of
+        right_preshape = pdaRight.shape[0:-2]  # both shapes
+        try:
+            #  if the shapes are incompatible for broadcast, broadcast_shapes
+            #  will raise an error, which will be caught below.
+            tmp_preshape = broadcast_shapes(left_preshape, right_preshape)
+            try:
+                cmd = f"experimentaldistmultidimmatmul<{pdaLeft.dtype},{pdaLeft.ndim},{pdaRight.dtype},{pdaRight.ndim}>"
+                args = {
+                    "a": pdaLeft,
+                    "b": pdaRight,
+                }
+                return create_pdarray(
+                    generic_msg(
+                        cmd=cmd,
+                        args=args,
+                    )
+                )
+            except Exception as e1:
+                raise RuntimeError("Failed to compute multidim matrix multiplication.") from e1
+        except Exception as e2:
+            raise ValueError(
+                f"Mismatch in dimensions of arguments for matmul: {pdaLeft.shape} and {pdaRight.shape}"
+            ) from e2

@@ -148,8 +148,8 @@ module LinalgMsg {
     */
 
 
-    //  As an experiment, matmul is going to be duplicated via altmatmul, which will call
-    //  altmatMult, in an effort to distribute matrix multiplication.
+    //  As an experiment, matmul is going to be duplicated via distmatmul, 
+    //  in an effort to distribute matrix multiplication.
 
     @arkouda.instantiateAndRegister
     proc matmul(cmd: string, msgArgs: borrowed MessageArgs, st: borrowed SymTab, type array_dtype_x1, type array_dtype_x2, param array_nd: int): MsgTuple throws 
@@ -198,39 +198,49 @@ module LinalgMsg {
         }
     }
 
-    @arkouda.instantiateAndRegister
-    proc altmatmul(cmd: string, msgArgs: borrowed MessageArgs, st: borrowed SymTab, type array_dtype_x1, type array_dtype_x2, param array_nd: int): MsgTuple throws 
-        where (array_nd >= 2) && (array_dtype_x1 != BigInteger.bigint) && (array_dtype_x2 != BigInteger.bigint) {
+    @arkouda.registerCommand(name="distmatmul")
+    proc distMatMul(a: [?da] ?ta, b: [?db] ?tb): [] np_ret_type(ta,tb) throws
+    where ( (da.rank == 2 && da.rank == db.rank)
+        && (ta == int || ta == real || ta == bool || ta == uint )
+        && (tb == int || tb == real || tb == bool || tb == uint )
+           ) {
+        param pn = Reflection.getRoutineName();
 
-        // Get the left and right arguments.
+    //  Looping is done over the locales.
+    //  Each loop instance works on the subdomain of the result that resides on the locale.
 
-        const x1Name = msgArgs["x1"].toScalar(string),
-              x2Name = msgArgs["x2"].toScalar(string);
+        const kRange = 0..<a.shape[1];
+        var C = makeDistArray((...(a.shape[0],b.shape[1])), np_ret_type(ta,tb));
+        coforall loc in Locales do on loc {    
+            const ClocDom = C.localSubdomain();
 
-        linalgLogger.debug(getModuleName(),getRoutineName(),getLineNumber(),
-            "cmd: %s dtype1: %s dtype2: %s".format(
-            cmd,type2str(array_dtype_x1),type2str(array_dtype_x2)));
+            if !ClocDom.isEmpty() { // Subdomains can be empty, depending on distribution
 
-        var x1E = st[x1Name]: borrowed SymEntry(array_dtype_x1, array_nd),
-            x2E = st[x2Name]: borrowed SymEntry(array_dtype_x2, array_nd);
+                const iRange = ClocDom.dim(0);    // get the i and j range for C
+                const jRange = ClocDom.dim(1);    // on this locale
 
-        type resultType = np_ret_type(array_dtype_x1, array_dtype_x2);
+            //  pull the rows and columns that we need to compute the local portion of
+            //  the result.
 
-        const (valid, outDims, err) = assertValidDims(x1E, x2E);
-        if !valid then return err;
+                var Alocal = a[iRange, kRange]; // bulk communication done
+                var Blocal = b[kRange, jRange]; // once per tile
 
-        var eOut = createSymEntry((...outDims), resultType);  // create entry of deduced output type
+            //  do the computation.
 
-        const x1 = x1E.a : resultType,
-              x2 = x2E.a : resultType;
-
-        if array_nd == 2
-            then altmatMult(x1, x2, eOut.a);
-            else batchedMatMult(x1, x2, eOut.a);
-
-        return st.insert(eOut);
-
+                forall (i,j) in {iRange, jRange} {
+                    var sum:np_ret_type(ta,tb) = 0:np_ret_type(ta,tb);
+                    for k in kRange do
+                        if np_ret_type(ta,tb) != bool then
+                           sum += Alocal[i, k]:np_ret_type(ta,tb) * Blocal[k, j]:np_ret_type(ta,tb);
+                        else
+                           sum |= Alocal[i, k]:bool & Blocal[k, j]:bool;
+                    C[i,j] = sum;
+                }
+            }
+        }
+        return C;
     }
+
 
     proc matMultDims(a: ?Na*int, b: ?Nb*int): (bool, Na*int) {
         var outDims: Na*int;
@@ -243,7 +253,6 @@ module LinalgMsg {
             if a[i] != b[i] then return (false, outDims);
             outDims[i] = a[i];
         }
-
         // the matrix dimensions must have compatible size
         if a[Na-1] != b[Na-2] then return (false, outDims);
         outDims[Na-2] = a[Na-2];
@@ -291,51 +300,6 @@ module LinalgMsg {
             } else {
                         C[i,j] |= A[i, l] & B[l, j];
             }
-    }
-
-    //  This is a first attempt at distributing matrix multiplication
-
-    proc altmatMult(in A: [?D1] ?t, in B: [?D2] t, ref C: [?D3] t)
-        where D1.rank == 2 && D2.rank == 2 && D3.rank == 2
-    {
-        const (m      , k      ) = D1.shape,
-              (_ /*k*/, n      ) = D2.shape,
-              (_ /*m*/, _ /*n*/) = D2.shape;
-
-    //  Looping is done over the locales.
-    //  Each loop instance works on the subdomain of the result that resides on the locale.
-
-        const kRange = 0..k-1;
-        coforall loc in Locales do on loc {    
-            const ClocDom = C.localSubdomain();
-
-            if !ClocDom.isEmpty() { // Subdomains can be empty, depending on distribution
-
-                const iRange = ClocDom.dim(0);    // get the i and j range for C
-                const jRange = ClocDom.dim(1);    // on this locale
-                const SubDomA = {iRange, kRange}; // also the subdomains for the rows and
-                const SubDomB = {kRange, jRange}; // columns we need from A and B
-
-                var Alocal: [SubDomA] t;  // define temporary matrices 
-                var Blocal: [SubDomB] t;  // for subsets of A and B
-
-            //  pull the rows and columns that we need to compute the local portion of
-            //  the result.
-
-                Alocal = A[iRange, kRange]; // bulk communication done
-                Blocal = B[kRange, jRange]; // once per tile
-
-                forall (i,j) in {iRange, jRange} {
-                    var sum:t = if t == bool then false else 0:t;
-                    for k in kRange do
-                        if t != bool then
-                           sum += Alocal[i, k] * Blocal[k, j];
-                        else
-                           sum |= Alocal[i, k] & Blocal[k, j];
-                    C[i,j] = sum;
-                }
-            }
-        }
     }
 
     // Transpose an array.
@@ -513,8 +477,8 @@ module LinalgMsg {
     // m,n and n,k, giving a product of m,k).
 
     @arkouda.registerCommand(name="multidimmatmul")
-    proc multidimmatmul(a: [?d] ?ta, b: [d] ?tb): [] np_ret_type(ta,tb) throws
-    where ( (d.rank >=2)
+    proc multidimmatmul(a: [?da] ?ta, b: [?db] ?tb): [] np_ret_type(ta,tb) throws
+    where ( (da.rank >= 2 && da.rank == db.rank)
         && (ta == int || ta == real || ta == bool || ta == uint )
         && (tb == int || tb == real || tb == bool || tb == uint )
            ) {
@@ -523,136 +487,60 @@ module LinalgMsg {
         // make an array of the appropriate shape and type to hold the output
 
         var eOut = makeDistArray((...matmulShape(a.shape, b.shape)), np_ret_type(ta,tb));
+        param dRank = da.rank;
 
-
-        // Thoughts about adapting this for distributed computing.
-        // Instead of what's below:
-        //
-        // coforall loc in locales do on loc {
-        //     forall outIdx in eOut.localSubDomain {
-        //         create vars for the two vectors described below
-        //             - a row vector of the appropriate elements of a, using aggregators
-        //             - a column vector of the appropriate elements of b, using aggregators
-        //         both of these will be formed by looping over the size of the last dim of a
-        //             and creating aIdx and bIdx indices using that and the value of outIdx
-        //             the aggregators will exist inside a loop
-        //         out[outIdx] = the dot product of the two vectors, computed outside the loop
-        //             after the aggregators are done
-        //     Note that I've already programmed that loop below
-
-        // The above is pseudocode.  Next comes real, but still commented-out, code.
-
-        // const kRange = 0..A.shape[d.rank-1] ; // the loop index
-        // coforall loc in Locales do on loc {
-        //    const ClocDom = c.localSubdomain();
-        //    var SubDomA = ClocDom ; SubDomA[d.rank-1] = kRange;
-        //    var SubDomB = ClodDom ; SubDomB[d.rank-2] = kRange;
-        //    var Alocal = a[SubDomA];
-        //    var Blocal = b[SumDomB];
-        //
-        //    if !ClocDom.isEmpty() {
-        //       forall Cidx in ClocDom {
-        //          var sum:t = if t == b ool then false else 0:t;
-        //          for k in kRange {
-        //              var Aidx = Cidx; Aidx[d.rank-1] = k;
-        //              var Bidx = Cidx; Bidx[d.rank-2] = k;
-        //              var sum:t = if t==bool then false else 0:t;
-        //              if t != bool then
-        //                  sum += Alocal[Aidx] * Blocal[Bidx];
-        //              else
-        //                  sum |= Alocal[Aidx] & Blocal[Bidx];
-        //          }
-        //          if t != bool then
-        //              c[Cidx] += sum;  // or maybe just equal?
-        //          else
-        //              c[Cidx] }= sum;  // and if it's equal, this if isn't needed
-        //      }
-        //    }
-        //       
 
         // loop over all output elements
 
-        coforall loc in Locales do on loc {   // this is just so I can see how the arrays are distributed
-            writeln ("===> ",loc," ",a.localSubdomain()," ",b.localSubdomain());
-        }
-
-        // the coforall goes above here
-        forall outIdx in eOut.domain { // this become eOut.localSubDomain(), I think
+        forall outIdx in eOut.domain {
             var aIdx = outIdx;
             var bIdx = outIdx;
-            //  declare local a_vec and b_vec, 1D vectors of size a.shape(d.rank-1)
             var total: np_ret_type(ta,tb) = 0:np_ret_type(ta,tb);
-            for i in 0..<a.shape(d.rank-1) { // maybe this also becomes a forall
-                aIdx = outIdx; aIdx[d.rank-1] = i; // aIdx = ( (front dims), m, loop variable)
-                bIdx = outIdx; bIdx[d.rank-2] = i; // bIdx = ( (front dims), loop variable, k)
-                // use copy aggregators to move those to a_vec[i] and b_vec[i]
+            for i in 0..<a.shape(dRank-1) { 
+                aIdx = outIdx; aIdx[dRank-1] = i; // aIdx = ( (front dims), m, loop variable)
+                bIdx = outIdx; bIdx[dRank-2] = i; // bIdx = ( (front dims), loop variable, k)
                 if np_ret_type(ta,tb) == bool {
-                    total |= a[aIdx]:bool && b[bIdx]:bool; // don't do these things
+                    total |= a[aIdx]:bool && b[bIdx]:bool; 
                 } else {
                     total += a[aIdx]:np_ret_type(ta,tb) * b[bIdx]:np_ret_type(ta,tb);
                 }
             }
-            eOut[outIdx] = total; // replace with eOut[outIdx] = a_vec*b_vec, using LinearAlgebra package
+            eOut[outIdx] = total;
         }
 
         return eOut;
     }
 
-    @arkouda.registerCommand(name="altmultidimmatmul")
-    proc altmultidimmatmul(a: [?d] ?ta, b: [d] ?tb): [] np_ret_type(ta,tb) throws
-    where ( (d.rank >=2)
+
+    @arkouda.registerCommand(name="distmultidimmatmul")
+    proc distMultiDimMatMul(a: [?da] ?ta, b: [?db] ?tb): [] np_ret_type(ta,tb) throws
+    where ( (da.rank >= 2 && da.rank == db.rank)
         && (ta == int || ta == real || ta == bool || ta == uint )
         && (tb == int || tb == real || tb == bool || tb == uint )
            ) {
         param pn = Reflection.getRoutineName();
+        param dRank = da.rank;    // since there's really only one.
 
         var c = makeDistArray((...matmulShape(a.shape, b.shape)), np_ret_type(ta,tb));
 
-        writeln ("\n\n ============> MADE IT HERE!!! <=============\n\n");
-
-        const kRange = 0..a.shape[d.rank-1] ; // the loop index
+        const kRange = 0..<a.shape[da.rank-1] ; // the loop index
         coforall loc in Locales do on loc {
            const ClocDom = c.localSubdomain();
-/*
-// suggestion from chatGPT here
-
-            var aRanges: d.rank*range;
-            var bRanges: d.rank*range;
-            for param i in 0..d.rank-1 {
-              if i == d.rank-1 {
-                aRanges[i] = kRange;
-                bRanges[i] = ClocDom.dim(i);
-              } else if i == d.rank - 2 {
-                aRanges[i] = ClocDom.dim(i);
-                bRanges[i] = kRange;
-              } else {
-                aRanges[i] = ClocDom.dim(i);
-                bRanges[i] = ClocDom.dim(i);
-              }
-            }
-
-            const SubDomA = {(...aRanges)};
-            const SubDomB = {(...bRanges)};
-
-// end of suggestion, which replaces the two commented out lines below
-
-//           var SubDomA = ClocDom ; SubDomA[d.rank-1] = kRange;
-//           var SubDomB = ClocDom ; SubDomB[d.rank-2] = kRange;
-
-           var Alocal = a[SubDomA];
-           var Blocal = b[SubDomB];
-           writeln ("On Locale ",here.id," C dom, A dom, B dom are: ",ClocDom," ",SubDomA," ",SubDomB);
-*/
         
            if !ClocDom.isEmpty() {
-                // Build the local parts of a and b
-               var aRanges: d.rank*range;
-               var bRanges: d.rank*range;
-               for param i in 0..d.rank-1 {
-                   if i == d.rank-1 {
+
+                // Build the local parts of a and b, i.e. those values needed to compute the local
+                // elements of c.
+                // The index of a will match the index of c, except in the final dimension.
+                // The index of b will match the index of c, except in the penultimate dimension.
+
+               var aRanges: dRank*range;
+               var bRanges: dRank*range;
+               for param i in 0..<dRank {
+                   if i == dRank - 1 {
                        aRanges[i] = kRange;
                        bRanges[i] = ClocDom.dim(i);
-                   } else if i == d.rank - 2 {
+                   } else if i == dRank - 2 {
                        aRanges[i] = ClocDom.dim(i);
                        bRanges[i] = kRange;
                    } else {
@@ -661,25 +549,25 @@ module LinalgMsg {
                    }
                }
 
+               // Now that we have ranges, construct subdomains, and pull the values we need.
+
                const SubDomA = {(...aRanges)};
                const SubDomB = {(...bRanges)};
-               writeln ("On Locale ",here.id," C dom, A dom, B dom are: ",ClocDom," ",SubDomA," ",SubDomB); // debugging
+
                var Alocal = a[SubDomA];
                var Blocal = b[SubDomB];
 
-                //  Now perform the computation
+               //  Now perform the computation
+
                forall Cidx in ClocDom {
-                   var sum: np_ret_type(ta,tb) =
-                       if np_ret_type(ta,tb) == bool then false else 0:np_ret_type(ta,tb);
+                   var sum: np_ret_type(ta,tb) = 0:np_ret_type(ta,tb);
                    for k in kRange {
-                       var Aidx = Cidx; Aidx[d.rank-1] = k;
-                       var Bidx = Cidx; Bidx[d.rank-2] = k;
+                       var Aidx = Cidx; Aidx[dRank-1] = k;
+                       var Bidx = Cidx; Bidx[dRank-2] = k;
                        if np_ret_type(ta,tb) != bool then
-                           sum += Alocal[Aidx]:np_ret_type(ta,tb)
-                                      * Blocal[Bidx]:np_ret_type(ta,tb);
+                           sum += Alocal[Aidx]:np_ret_type(ta,tb) * Blocal[Bidx]:np_ret_type(ta,tb);
                        else
-                           sum |= Alocal[Aidx]:np_ret_type(ta,tb)
-                                      & Blocal[Bidx]:np_ret_type(ta,tb);
+                           sum |= Alocal[Aidx]:bool & Blocal[Bidx]:bool;
                    }
                    c[Cidx] = sum;
                 }
@@ -824,3 +712,134 @@ module LinalgMsg {
     //     return false;
     // }
 }
+
+
+/*
+
+    What follows is code to improve the performance of distributed multi-dimensional matrix multiplication.
+    This is being held in a commented out section for now.  I'll start making and testing it when I have a
+    bare metal version of arkouda up and running.
+
+    
+    proc experimentalMatMulShape (aShape: ?Na*int, bShape: ?Nb*int) : Nb*int where (Nb >= Na && Na >= 2) {
+	    var shapeOut: Nb*int;
+	    shapeOut[Nb-1] = bShape[Nb-1];
+	    shapeOut[Nb-2] = aShape[Na-2];
+	    if Na == 2 then
+		    for i in 0..<Nb {shapeOut[i] = bShape[i];}
+	    else
+		    var aPreshape : (Na-2)*int;
+    		var bPreshape: (Nb-2)*int;
+	    	for i in 0..<(Na-2) {aPreshape[i] = ashape[i];}
+		    for i in 0..<(Nb-2) {bPreshape[i] = bshape[i];}
+    		cPreshape = broadcastShape(aPreshape,bPreshape);
+	    	for i in 0..<Nb-2 {shapeOut[i] = cPreshape[i];}
+    	return shapeOut;
+    }
+
+    proc experimentalMatMulShape (aShape: ?Na*int, bShape: ?Nb*int) : Na*int where (Nb < Na && Nb >= 2) {
+	    var shapeOut: Na*int;
+	    shapeOut[Nb-1] = bShape[Nb-1];
+	    shapeOut[Nb-2] = aShape[Na-2];
+	    if Nb == 2 then
+		    for i in 0..<Na {shapeOut[i] = aShape[i];}
+	    else
+		    var aPreshape : (Na-2)*int;
+    		var bPreshape: (Nb-2)*int;
+	    	for i in 0..<(Na-2) {aPreshape[i] = ashape[i];}
+		    for i in 0..<(Nb-2) {bPreshape[i] = bshape[i];}
+    		cPreshape = broadcastShape(aPreshape,bPreshape);
+	    	for i in 0..<Nb-2 {shapeOut[i] = cPreshape[i];}
+    	return shapeOut;
+    }
+
+    @arkouda.registerCommand(name="expdistmultidimmatmul")
+    proc expDistMultiDimMatMul(a: [?da] ?ta, b: [?db] ?tb): [] np_ret_type(ta,tb) throws
+    where ( da.rank >= 2 && db.rank >= 2 && (da.rank >= 3 || db.rank >= 3)) {
+        && (ta == int || ta == real || ta == bool || ta == uint )
+        && (tb == int || tb == real || tb == bool || tb == uint )
+           ) {
+        param pn = Reflection.getRoutineName();
+
+        var c = makeDistArray((...experimentalMatmulShape(a.shape, b.shape)), np_ret_type(ta,tb));
+
+        const kRange = 0..<a.shape[da.rank-1] ; // the loop index
+
+        coforall loc in Locales do on loc {
+           const ClocDom = c.localSubdomain();
+        
+           if !ClocDom.isEmpty() {
+
+                // Build the local parts of a and b, i.e. those values needed to compute the local
+                // elements of c.
+                // The index of a will match the index of c, except in the final dimension.
+                // The index of b will match the index of c, except in the penultimate dimension.
+
+               var aRanges: da.rank*range;
+               var bRanges: db.rank*range;
+               var aoffset = c.rank - da.rank;
+               var boffset = c.rank - db.rank;
+
+               for i in 0..<da.rank {
+	              if i == da.rank - 1 {
+               		 aRange[i] = kRange;
+	              } else if a.dim[i] == 1 
+		             aRange[i] = 0..0
+	              } else {
+		             aRange[i] = cLocDim[i + aoffset];
+	           }
+
+               for i in 0..<db.rank {
+	              if i == db.rank - 2 {
+               		 bRange[i] = kRange;
+	              } else if b.dim[i] == 1 
+		             bRange[i] = 0..0
+	              } else {
+		             bRange[i] = cLocDim[i + boffset];
+	              }
+               }
+
+               // Now that we have ranges, construct subdomains, and pull the values we need.
+
+               const SubDomA = {(...aRange)};
+               const SubDomB = {(...bRange)};
+
+               var Alocal = a[SubDomA];
+               var Blocal = b[SubDomB];
+
+               //  Now perform the computation
+
+               forall Cidx in ClocDom {
+                   var sum: np_ret_type(ta,tb) = 0:np_ret_type(ta,tb);
+                   var Aidx: da.rank*int;
+	               Aidx[da.rank-1] = k;
+
+                   for k in kRange {
+	                   Aidx[da.rank-1] = k;
+	                   for i in 0..<da.rank-1 {
+		                   if aRange[i] = 0..0 {
+			                   Aidx[i] = 0;
+		                   } else {
+			                   Aidx[i] = Cidx[i+aoffset];
+		                   }
+                       }
+	                   Bidx[da.rank-2] = k;
+	                   for i in 0..<db.rank-1 {
+		                   if bRange[i] = 0..0 {
+			                   Bidx[i] = 0;
+		                   } else {
+			                   Bidx[i] = Cidx[i+boffset];
+     		               }
+                       }
+                       if np_ret_type(ta,tb) != bool then
+                           sum += Alocal[Aidx]:np_ret_type(ta,tb) * Blocal[Bidx]:np_ret_type(ta,tb);
+                       else
+                           sum |= Alocal[Aidx]:bool & Blocal[Bidx]:bool;
+                   }
+                   c[Cidx] = sum;
+                }
+             }   
+          }
+          return c;
+    }
+ */
