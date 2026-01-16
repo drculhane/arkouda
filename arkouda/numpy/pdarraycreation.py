@@ -34,8 +34,10 @@ from arkouda.numpy.dtypes import (
     is_supported_int,
     is_supported_number,
     numeric_scalars,
+    numeric_and_bool_scalars,
     resolve_scalar_dtype,
     str_,
+    str_scalars,
 )
 from arkouda.numpy.dtypes import dtype as akdtype
 from arkouda.numpy.dtypes import int64 as akint64
@@ -760,7 +762,7 @@ def ones(
 @overload
 def full(
     size: Union[int_scalars, Tuple[int_scalars, ...], str],
-    fill_value: str,
+    fill_value: str_scalars,
     dtype: None = ...,
     max_bits: Optional[int] = ...,
 ) -> Strings: ...
@@ -769,7 +771,7 @@ def full(
 @overload
 def full(
     size: Union[int_scalars, Tuple[int_scalars, ...], str],
-    fill_value: Union[numeric_scalars, np.bool, str],
+    fill_value: Union[numeric_and_bool_scalars, str_scalars],
     dtype: str,
     max_bits: Optional[int] = ...,
 ) -> Strings: ...
@@ -778,7 +780,7 @@ def full(
 @overload
 def full(
     size: Union[int_scalars, Tuple[int_scalars, ...], str],
-    fill_value: Union[numeric_scalars, np.bool],
+    fill_value: Union[numeric_and_bool_scalars],
     dtype: None = ...,
     max_bits: Optional[int] = ...,
 ) -> pdarray: ...
@@ -787,7 +789,7 @@ def full(
 @overload
 def full(
     size: Union[int_scalars, Tuple[int_scalars, ...], str],
-    fill_value: Union[numeric_scalars, np.bool, str],
+    fill_value: Union[numeric_and_bool_scalars, str_scalars],
     dtype: Union[np.dtype, type, bigint],
     max_bits: Optional[int] = ...,
 ) -> pdarray: ...
@@ -796,7 +798,7 @@ def full(
 @typechecked
 def full(
     size: Union[int_scalars, Tuple[int_scalars, ...], str],
-    fill_value: Union[numeric_scalars, np.bool, str],
+    fill_value: Union[numeric_and_bool_scalars, str_scalars],
     dtype: Union[None, np.dtype, type, str, bigint] = None,
     max_bits: Optional[int] = None,
 ) -> Union[pdarray, Strings]:
@@ -807,7 +809,7 @@ def full(
     ----------
     size: int_scalars or tuple of int_scalars
         Size or shape of the array
-    fill_value: numeric_scalars or str
+    fill_value: numeric_scalars, bool_scalars or str_scalars
         Value with which the array will be filled
     dtype: all_scalars
         Resulting array type.  If None, it will be inferred from fill_value
