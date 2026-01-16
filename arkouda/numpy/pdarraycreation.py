@@ -757,15 +757,9 @@ def ones(
     return full(size=size, fill_value=1, dtype=dtype, max_bits=max_bits)
 
 
-SizeArg = Union[int_scalars, Tuple[int_scalars, ...], str]
-NumericFill = Union[numeric_scalars, np.bool]
-FillValue = Union[NumericFill, str]
-NumericDTypeArg = Union[np.dtype, type, bigint]
-
-
 @overload
 def full(
-    size: SizeArg,
+    size: Union[int_scalars, Tuple[int_scalars, ...], str],
     fill_value: str,
     dtype: None = ...,
     max_bits: Optional[int] = ...,
@@ -774,8 +768,8 @@ def full(
 
 @overload
 def full(
-    size: SizeArg,
-    fill_value: FillValue,
+    size: Union[int_scalars, Tuple[int_scalars, ...], str],
+    fill_value: Union[numeric_scalars, np.bool, str],
     dtype: str,
     max_bits: Optional[int] = ...,
 ) -> Strings: ...
@@ -783,8 +777,8 @@ def full(
 
 @overload
 def full(
-    size: SizeArg,
-    fill_value: NumericFill,
+    size: Union[int_scalars, Tuple[int_scalars, ...], str],
+    fill_value: Union[numeric_scalars, np.bool],
     dtype: None = ...,
     max_bits: Optional[int] = ...,
 ) -> pdarray: ...
@@ -792,9 +786,9 @@ def full(
 
 @overload
 def full(
-    size: SizeArg,
-    fill_value: FillValue,
-    dtype: NumericDTypeArg,
+    size: Union[int_scalars, Tuple[int_scalars, ...], str],
+    fill_value: Union[numeric_scalars, np.bool, str],
+    dtype: Union[np.dtype, type, bigint],
     max_bits: Optional[int] = ...,
 ) -> pdarray: ...
 
